@@ -1,0 +1,42 @@
+.deploy-before-script: &deploy-before-script
+  - which ssh-agent || (apk add --update openssh-client)
+  - eval $(ssh-agent -s)
+  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+  - mkdir ~/.ssh
+  - ssh-keyscan -H $SSH_HOST >> ~/.ssh/known_hosts
+
+.deploy-script: &deploy-script
+  - >
+    ssh $SSH_USER@$SSH_HOST
+    "cd ${PATH_TO_PROJECT};
+    ssh-agent bash -c 'ssh-add ~/.ssh/ssh_key';
+    git checkout -- .;
+    git pull origin ${CI_COMMIT_BRANCH};
+    composer install ${OPTIMIZE};
+    php artisan optimize;
+    php artisan migrate --force;
+    sudo chmod -R 0777 storage bootstrap/cache
+    "
+
+cache:
+  key: $CI_COMMIT_REF_SLUG
+  paths:
+    - vendor
+    - node_modules
+    - .yarn
+
+stages:
+  - deploy
+
+deploy_dev:
+  stage: deploy
+  environment: Development
+  variables:
+    GIT_STRATEGY: none
+    OPTIMIZE: ""
+  before_script:
+    - *deploy-before-script
+  script:
+    - *deploy-script
+  rules:
+    - if: $SSH_HOST && $SSH_USER && $SSH_PRIVATE_KEY && $PATH_TO_PROJECT && $CI_COMMIT_REF_NAME == "dev"
